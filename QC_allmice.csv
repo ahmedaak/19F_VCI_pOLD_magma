@@ -1,0 +1,18 @@
+Mouse,Signal category,Gas challenges (all 3),Fitting_0,Fitting_1,Fitting_7,Fitting_28
+M02,Good,Y,Y,-,-,-
+M03,Good,Y,Y,Y,Y,Y
+M05,Good,Y,Y,N,N,Y
+M08,Good,Y,Y,Y,Y,Y
+M09,Sufficient,N,Y,N,N,Y
+M10,Sufficient,N,Y,N,N,Y
+M15,Sufficient,Y,N,N,N,N
+M01,Low,N,X,-,-,-
+M06,Low,N,X,X,X,X
+M11,Low,N,X,X,X,-
+M13,Low,N,X,X,X,X
+M16,Low,N,X,X,-,-
+M04,Absent,N,X,-,-,-
+M07,Absent,N,X,X,X,-
+M12,Absent,N,X,X,X,-
+M14,Absent,N,X,-,-,-
+M17,Absent,N,X,X,-,-

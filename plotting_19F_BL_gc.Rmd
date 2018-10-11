@@ -1,0 +1,262 @@
+---
+title: "Monitoring brain oxygenation in vascular cognitive impairment"
+author: "Ahmed Khalil"
+date: "19. September 2017"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+## In vitro pO2 calibration
+```{r, echo= FALSE, fig.width=6, fig.height=6, fig.align='center',dpi=300}
+rm(list=ls()) # clear variables
+# load necessary packages
+library("RColorBrewer")
+library("knitr")
+library("kableExtra")
+library("TOSTER")
+library("cowplot")
+
+# set font size for plots
+fontsize <- 1.5
+
+# define O2 concentrations used - NB: order has to match folder names!
+o2_perc <- c(0, 100, 25, 75, 50, 12.5, 21) 
+# convert % O2 to partial pressure (in mmHg)
+o2_mmHg <- o2_perc*(760/100) 
+# directory where data from in vitro experiments are saved
+samp_dir <- list.dirs(path = paste(getwd(),"/in_vitro_calibration/dat", sep=""), full.names = F, recursive = F) 
+# define colors to be used for visualizing each sample's data
+samp_colors <- c("#a6cee3","#1f78b4","#b2df8a","#33a02c","#d95f02","#7570b3","#00000") 
+calib_data <- data.frame(samp_dir, o2_mmHg, samp_colors)
+colnames(calib_data) <- c("Directory_name","O2_partial_pressure","Colors")
+# loop through each calibration sample
+for (s in calib_data[,1]){
+  # read in voxelwise T1 values
+  T1_calib_vals <- read.table(paste(getwd(),"/in_vitro_calibration/dat/",s,"/output/SNR_FAIREPI/T1.txt", sep = ""), header = F)$V4/1000 # NB: T1 in seconds
+      # define variable name for R1 values
+      R1_var_name <- paste("R1_calib_vals_", calib_data[calib_data[,1]==s,2], sep="")
+      # define variable name for R1 density
+      R1_var_name_k <- paste("R1_calib_vals_k_", calib_data[calib_data[,1]==s,2], sep="")
+  # convert T1 to R1 + remove zeroes
+  assign(R1_var_name, 1/T1_calib_vals[T1_calib_vals != 0])
+  # get kernel density of R1 values
+  assign(R1_var_name_k, density(get(R1_var_name), adjust = 1))
+}
+
+
+# plot distribution of R1 values
+plot(R1_calib_vals_k_0, col = calib_data[1,3], xlim = c(min(R1_calib_vals_0, R1_calib_vals_159.6, R1_calib_vals_190, R1_calib_vals_380, R1_calib_vals_570, R1_calib_vals_760, R1_calib_vals_95),max(R1_calib_vals_0, R1_calib_vals_159.6, R1_calib_vals_190, R1_calib_vals_380, R1_calib_vals_570, R1_calib_vals_760, R1_calib_vals_95)), ylim = c(min(R1_calib_vals_k_0$y, R1_calib_vals_k_159.6$y, R1_calib_vals_k_190$y, R1_calib_vals_k_380$y, R1_calib_vals_k_570$y, R1_calib_vals_k_760$y, R1_calib_vals_k_95$y),max(R1_calib_vals_k_0$y, R1_calib_vals_k_159.6$y, R1_calib_vals_k_190$y, R1_calib_vals_k_380$y, R1_calib_vals_k_570$y, R1_calib_vals_k_760$y, R1_calib_vals_k_95$y)), xlab="R1 [1/s]")
+
+lines(R1_calib_vals_k_95, col = calib_data[2,3])
+lines(R1_calib_vals_k_159.6, col = calib_data[3,3])
+lines(R1_calib_vals_k_190, col = calib_data[4,3])
+lines(R1_calib_vals_k_380, col = calib_data[5,3])
+lines(R1_calib_vals_k_570, col = calib_data[6,3])
+lines(R1_calib_vals_k_760, col = calib_data[7,3])
+
+legend(x = "topright", legend = c("0","95","159.6","190","380","570","760"), col = calib_data[,3], lty = 1, cex=0.6, lwd = 2, horiz = T)
+
+# get mean R1 value for each and save in dataframe
+mean_R1 <- as.numeric(c(mean(R1_calib_vals_0),mean(R1_calib_vals_760),mean(R1_calib_vals_190),mean(R1_calib_vals_570),mean(R1_calib_vals_380),mean(R1_calib_vals_95),mean(R1_calib_vals_159.6)))
+
+# get coefficient of variation (cv) for each sample and save in dataframe
+cv <- function(x){
+  r <- sd(x)/mean(x)
+  return(round(r,digits=2))
+}
+
+cv_vals <- c(cv(R1_calib_vals_0),cv(R1_calib_vals_95),cv(R1_calib_vals_159.6),cv(R1_calib_vals_190),cv(R1_calib_vals_380),cv(R1_calib_vals_570),cv(R1_calib_vals_760))
+cv_labs <- c("0","95","159.6","190","380","570","760")
+cv_R1 <- cbind(cv_labs, cv_vals)
+kable(cv_R1, caption = "Coefficient of variation (CV) values for each in vitro sample", col.names = c("% O2", "CV"))
+
+#full_calib_data <- data.frame(calib_data,as.numeric(o2_mmHg))
+full_calib_data <- data.frame(calib_data, mean_R1)
+# do linear regression of pO2 vs R1
+pO2_R1_reg <- lm(full_calib_data$mean_R1~full_calib_data$O2_partial_pressure)
+# plot calibration curve
+ggplot(full_calib_data, aes(x=O2_partial_pressure,y=mean_R1)) + geom_point(size=5) + geom_smooth(method=lm) + theme_bw() + labs(x="pO2 [mmHg]", y="R1 [1/s]") + theme(axis.text = element_text(size=18), axis.title = element_text(size=18))
+
+# summary of regression model 
+summary(pO2_R1_reg)
+
+# plot model assumptions
+par(mfrow=c(2,2))
+plot(pO2_R1_reg)
+
+# regression equation
+print(paste("R1= ", pO2_R1_reg$coefficients[1], " + ", pO2_R1_reg$coefficients[2], "*pO2"))
+
+# 95% CI of regression model
+print("95 % CI of regression model")
+confint(pO2_R1_reg, level=0.95)
+```
+
+
+## In vivo data quality control
+```{r, echo= FALSE, fig.width=6, fig.height=6, fig.align='center',warning=F,dpi=300}
+# plot SNR & QC results
+  # load SNR data
+  snr_data <- read.table("SNR_ANALYSIS/SNR_results.csv",header = T, sep = ";")
+
+  # select SNR data ONLY for mice who had scans at all 4 timepoints
+        # keep only columns without NAs
+        snr_data <- snr_data[,colSums(is.na(snr_data)) == 0]
+
+  # plot mean SNR
+  matplot(snr_data[c(1:4),-1], type = "b", lty = c(1), pch = c(15,16,17,18), col = c("black","black", "red", "red",  "blue", "blue", "green4", "green4"), xaxt = "n", ylab = "SNR (a.u.)", xlab = "Timepoints", cex.axis=fontsize,cex.lab=fontsize);
+  axis(1,at = c(1:4), labels = c("-7","1","7","28"), cex.axis=fontsize,cex.lab=fontsize)
+
+   # plot number of voxels
+  matplot(snr_data[c(5:8),-1], type = "b", lty = c(1), pch = c(15,16,17,18), col = c("black","black", "red", "red",  "blue", "blue", "green4", "green4"), xaxt = "n", ylab = "Number of voxels", xlab = "Timepoints (days)", cex.axis=fontsize,cex.lab=fontsize)
+  axis(1,at = c(1:4), labels = c("-7","1","7","28"), cex.axis=fontsize,cex.lab=fontsize)
+  
+  # plot integrated SNR (mean SNR*number of voxels SNR > 5) - this is proportional to concentration of contrast agent
+  # calculate integrated SNR 
+  iSNR <- snr_data[c(1:4),-1]*snr_data[c(5:8),-1]
+  # plot (NB: y scale is log)
+  par(mar=c(5.1, 4.1, 4.1, 7.1), xpd=TRUE)
+  matplot(iSNR, type = "b", lty = c(1), pch = c(15,16,17,18), col = c("black","black", "red", "red",  "blue", "blue", "green4", "green4"), xaxt = "n", ylab = "Integrated SNR", xlab = "Timepoints (days)", cex.axis=fontsize,cex.lab=fontsize, log="y")
+  axis(1,at = c(1:4), labels = c("-7","1","7","28"), cex.axis=fontsize,cex.lab=fontsize)
+  legend(x= "topright", legend = colnames(snr_data[,-1]), col=c("black","black", "red", "red",  "blue", "blue", "green4", "green4"), pch=c(15,16,17,18), inset=c(-0.25,0), title="Mouse")
+      
+  # plot 19F signal 
+  signal_data <- read.table("SNR_ANALYSIS/signal_quantification.csv",header = T,sep = ";")
+  matplot(signal_data[,-1], type = "b", lty = c(1), pch = c(15,16,17,18,1), col = c("black","black","black","black","black", "red", "red", "red", "red","red", "blue", "blue", "blue", "blue","blue", "green4", "green4", "green4", "green4"), xaxt = "n", ylab = "Signal", xlab = "Timepoints (days)", cex.axis=fontsize,cex.lab=fontsize)
+  axis(1,at = c(1:4), labels = c("-7","1","7","28"), cex.axis=fontsize,cex.lab=fontsize)
+  
+  # Table of each mouse + what analysis was performed
+  # load in data
+  QC_table_allmice <- read.table("QC_allmice.csv", sep = ",", header = T)
+  colnames(QC_table_allmice) <- c("Mouse", "Signal","All 3 gas challenges?","R1 fitting day 0*", "R1 fitting day 1*", "R1 fitting day 7*", "R1 fitting day 28*")
+  kable(QC_table_allmice,digits=1, align=c("l","l","c","c","c","c","c")) %>% add_footnote("Y refers to successful R1 fitting, N to unsuccessful fitting, X to ineligibility for fitting (because of low signal), and - to absence of FAIR-EPI data (i.e. mouse not scanned).", notation = "symbol") %>% kable_styling(full_width=F)
+
+```
+
+## In vivo optimization (gas challenges)
+```{r, echo= FALSE, fig.width=6, fig.height=6, fig.align='center',dpi=300}
+
+TIs <- c(25, 400, 800, 1200, 1600, 2000) # define TIs
+
+data_dir <- "GC_optimize"
+setwd(data_dir)
+sub_dir <- list.dirs(path = getwd(), full.names = F, recursive = F)
+
+
+for (x in sub_dir) { # loop through mice
+  if (x=="R" | x=="M15") {next}
+  for (y in c("FAIRmask")) { # loop through mask types
+
+# Load files of signal change with each TI (mean within SNR mask)
+#par(mfrow=c(2,2))
+signal_30 <- read.csv(paste(x,"/output/",y,"/mean_signal_30.txt", sep = ""), header = F)
+signal_30 <- signal_30$V1
+signal_60 <- read.csv(paste(x,"/output/",y,"/mean_signal_60.txt", sep = ""), header = F)
+signal_60 <- signal_60$V1
+signal_100 <- read.csv(paste(x,"/output/",y,"/mean_signal_100.txt", sep = ""), header = F)
+signal_100 <- signal_100$V1
+
+# plot signal change vs TI
+plot(TIs, signal_30, col = "red", type = "l", ylim = c(min(signal_30, signal_60, signal_100),max(signal_30, signal_60, signal_100)), xlab = "Inversion time (ms)", ylab = "Signal (a.u.)", main = paste(x,y, "signal"), lwd = 2, cex.lab = fontsize, cex.axis = fontsize)
+lines(TIs, signal_60, col = "blue", lwd = 2, cex.lab = fontsize, cex.axis = fontsize)
+lines(TIs, signal_100, col = "black", lwd = 2, cex.lab = fontsize, cex.axis = fontsize)
+legend(x = "topright", legend = c("30%", "60%", "100%"), col = c("red", "blue", "black"), lty = 1, lwd = 2, cex=fontsize)
+
+for (i in c("T1", "beta", "S0")) { # loop through parameters outputted by Philipp's T1 fitting script
+T1_30 <- read.table(paste(x,"/output/",y,"/30_", i, ".txt", sep = "")); T1_30 <- T1_30$V4
+T1_60 <- read.table(paste(x,"/output/",y,"/60_", i, ".txt", sep = "")); T1_60 <- T1_60$V4
+T1_100 <- read.table(paste(x,"/output/",y,"/100_", i, ".txt", sep = "")); T1_100 <- T1_100$V4
+
+if (i=="T1"){
+# Remove all zero values AND CONVERT T1 (in s) to R1 
+T1_30 <- 1/(T1_30[T1_30 != 0]/1000) # REMOVE ALL ZERO VALUES
+T1_60 <- 1/(T1_60[T1_60 != 0]/1000) # REMOVE ALL ZERO VALUES
+T1_100 <- 1/(T1_100[T1_100 != 0]/1000) # REMOVE ALL ZERO VALUES
+# Change label to "R1"
+i <- c("R1 [1/s]")
+}
+else {T1_30 <-T1_30[T1_30 != 0] # REMOVE ALL ZERO VALUES
+T1_60 <- T1_60[T1_60 != 0] # REMOVE ALL ZERO VALUES
+T1_100 <- T1_100[T1_100 != 0] # REMOVE ALL ZERO VALUES}
+}
+
+# calculate kernel density of distribution of parameter values
+T1_30_d <- density(T1_30, adjust = 1) 
+T1_60_d <- density(T1_60, adjust = 1) 
+T1_100_d <- density(T1_100, adjust = 1)
+
+# plot kernel density of parameters
+plot(T1_30_d, col = "red", xlim = c(min(T1_30, T1_60, T1_100),max(T1_30, T1_60, T1_100)), ylim = c(min(T1_30_d$y, T1_60_d$y, T1_100_d$y),max(T1_30_d$y, T1_60_d$y, T1_100_d$y)), xlab = i, ylab = "Density", main = paste(x,y, i), lwd = 2, cex.lab = fontsize, cex.axis = fontsize)
+lines(T1_60_d, col = "blue", lwd = 2, cex.lab = fontsize, cex.axis = fontsize)
+lines(T1_100_d, col = "black", lwd = 2, cex.lab = fontsize, cex.axis = fontsize)
+abline(v = c(median(T1_30), median(T1_60), median(T1_100)), col=c("red", "blue", "black"), lty=2)
+legend(x = "topright", legend = c("30%", "60%", "100%"), col = c("red", "blue", "black"), lty = 1, cex=fontsize, lwd = 2)
+
+}
+  }
+}
+```
+
+```{r, echo= FALSE, fig.width=6, fig.height=6, fig.align='center',dpi=300}
+
+# plot R1 mean fit with different challenges
+T1_meanfit <- 1/(read.table(file = "GC_optimize/FAIRepi_t1_meanfit.csv", header = T, sep = ";")/1000) # NB: R1 in 1/s
+boxplot(t(T1_meanfit), ylab = "R1 (1/s)", xlab = "O2 level", xaxt = "n", cex.lab = fontsize, cex.axis = fontsize)
+axis(1, at=c(1,2,3), labels = c("30%","60%","100%"), cex.lab = fontsize, cex.axis = fontsize)
+matplot(T1_meanfit, col = c("blue","red","darkgreen","black"), add = T, type = "b", pch = 19, lty = 2, lwd = 2, cex.lab = fontsize, cex.axis = fontsize)
+legend(x= "topleft", legend = colnames(T1_meanfit), col=c("blue","red","darkgreen","black"), pch=c(19))
+
+```
+
+
+## In vivo pO2 changes over time
+```{r, echo= FALSE, fig.width=6, fig.height=6, fig.align='center',dpi=300}
+
+# Plot longitudinal data
+data_dir <- "LONGITUDINAL_ANALYSIS/"
+setwd(data_dir)
+timepoint_dir <- c("BL","24H","1W","4W")
+mice_list <- c("M03", "M05", "M08", "M09", "M10")
+
+T1_mean_alltp_allmice <- c() # define vector for all T1 values for all mice
+
+for (y in mice_list) { # loop through mice
+  T1_mean_alltp <- c() # define vector for all T1 values for this mouse
+for (x in timepoint_dir) { # loop through timepoints
+  T1_mean_tp <- read.csv(paste(x,"/",y,"/output/t1_mean.txt", sep = ""), header = F) # load T1 value for this timepoint + mouse
+  T1_mean_alltp <- rbind(T1_mean_alltp, T1_mean_tp)
+  
+  T1_signal <- read.table(paste(x,"/",y,"/output/mean_signal.txt", sep = ""), header = F) # load mean signal values for this timepoint + mouse
+  
+  if (x=="BL"){plot(TIs, t(T1_signal), type="b", main = y, ylim = c(0,65), ylab = "Signal", xlab = "Inversion time (s)", cex.lab = fontsize, cex.axis = fontsize)}
+  if (x=="24H") {lines(TIs, t(T1_signal), type="b", col = "red", cex.lab = fontsize, cex.axis = fontsize)}
+  if (x=="1W") {lines(TIs, t(T1_signal), type="b", col = "blue", cex.lab = fontsize, cex.axis = fontsize)}
+  if (x=="4W") {lines(TIs, t(T1_signal), type="b", col = "green", cex.lab = fontsize, cex.axis = fontsize)}
+  legend("topright", legend = c("-1W","24h","1W","4W"), lty = 1, col = c("black","red","blue","green"))
+
+}
+  T1_mean_alltp_allmice <- append(T1_mean_alltp_allmice, T1_mean_alltp)
+}
+  # convert T1 to R1
+  T1_mean_alltp_allmice <- 1/(data.frame(T1_mean_alltp_allmice)/1000) #NB : R1 in 1/s
+  colnames(T1_mean_alltp_allmice) <- mice_list
+  plot(T1_mean_alltp_allmice$M03, lty = 1, type = "b", col = "red", pch=19, ylab = "R1 (1/s)", xaxt = "n", xlab = "Timepoints", cex.axis=fontsize,cex.lab=fontsize, ylim = c(0.5,0.7))
+  axis(1, at=c(1,2,3,4), labels = c("-1W","24h","1W","4W"), cex.lab = fontsize, cex.axis = fontsize)
+  lines(T1_mean_alltp_allmice$M08, col = "blue", type = "b", pch=19, cex.axis=fontsize,cex.lab=fontsize)
+  legend("bottomleft", legend = c("M03","M08"), col = c("red","blue"), lty = 1, pch=19)
+
+# plot as pO2 values
+  # convert R1 -> pO2
+  T1.to.pO2 <- function(x) {(x- pO2_R1_reg$coefficients[1])/pO2_R1_reg$coefficients[2]}
+  pO2_mean_alltp_allmice <- sapply(T1_mean_alltp_allmice, T1.to.pO2)
+  pO2_mean_alltp_allmice <- data.frame(pO2_mean_alltp_allmice)
+  plot(pO2_mean_alltp_allmice$M03, lty = 1, type = "b", ylim=c(40,120), col = "red", pch=19, ylab = "pO2 (mmHg)", xaxt = "n", xlab = "Timepoints (days)", cex.lab = fontsize, cex.axis = fontsize)
+  axis(1, at=c(1,2,3,4), labels = c("-7","1","7","28"), cex.lab = fontsize, cex.axis = fontsize)
+  lines(pO2_mean_alltp_allmice$M08, col = "blue", type = "b", pch=19, cex.axis=fontsize,cex.lab=fontsize)
+
+  legend("bottomleft", legend = c("M03","M08"), col = c("red","blue"), lty = 1, pch=19)
+
+```
+
